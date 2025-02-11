@@ -279,13 +279,14 @@ class NameNationalityDataStream(IterableDataset):
 
     def __iter__(self):
         """
-        Stream rows from the CSV in chunks of `chunksize`, yielding them one by one.
+        Stream rows from the CSV in shuffled chunks of `chunksize`, yielding them one by one.
 
         Yields
         ------
         Tuple of torch.Tensor, torch.Tensor, torch.Tensor
         """
         for chunk in pd.read_csv(self.data_file, chunksize=self.chunksize):
+            chunk = chunk.sample(frac=1)
             for _, row in chunk.iterrows():
                 # encode training inputs as padded index tensors
                 X, sequence_lengths = self._encode_name(
