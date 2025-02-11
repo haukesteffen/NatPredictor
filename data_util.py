@@ -60,7 +60,6 @@ class NameNationalityDataStream(IterableDataset):
         """
         Each character of the vocabulary is assigned an integer index, starting at 1 so that 0 can be 
         used as a padding index. The vocabulary is a list of unique characters generated from the dataset.
-        This method also prints out the vocabulary and vocabulary length.
 
         Parameters
         ----------
@@ -78,7 +77,6 @@ class NameNationalityDataStream(IterableDataset):
                 The number of unique characters in vocabulary.
         """
         vocabulary_length = len(vocabulary)
-        print(f"Vocabulary of length {vocabulary_length}:\n{vocabulary}")
         ctoi = {c:i for i, c in enumerate(vocabulary, 1)} # start enumeration at 1 because 0 is padding index
         itoc = {i:c for i, c in enumerate(vocabulary, 1)}
         return ctoi, itoc, vocabulary_length
@@ -94,8 +92,7 @@ class NameNationalityDataStream(IterableDataset):
         - A mapping from each country code in the provided list to the corresponding class index,
             as determined by the country_mapping dictionary.
 
-        Additionally, it calculates the total number of distinct target classes and prints this number
-        along with a list of the target classes.
+        Additionally, it calculates the total number of distinct target classes.
 
         Parameters
         ----------
@@ -118,7 +115,6 @@ class NameNationalityDataStream(IterableDataset):
         """
         output_classes = set(country_mapping.values())
         number_of_classes = len(output_classes)
-        print(f'Number of target classes: {number_of_classes}:\n{", ".join(output_classes)}')
         class_to_index = {c:i for i, c in enumerate(output_classes, 1)} # start enumeration at 1 because 0 is padding index
         index_to_class = {i:c for c, i in class_to_index.items()}
         alpha2_to_index = {country: class_to_index[country_mapping[country]] for country in country_codes}
@@ -368,7 +364,6 @@ class NameNationalityData(Dataset):
         """
         Each character of the vocabulary is assigned an integer index, starting at 1 so that 0 can be 
         used as a padding index. The vocabulary is a list of unique characters generated from the dataset.
-        This method also prints out the vocabulary and vocabulary length.
 
         Parameters
         ----------
@@ -386,7 +381,6 @@ class NameNationalityData(Dataset):
                 The number of unique characters in vocabulary.
         """
         vocabulary_length = len(vocabulary)
-        print(f"Vocabulary of length {vocabulary_length}:\n{vocabulary}")
         ctoi = {c:i for i, c in enumerate(vocabulary, 1)} # start enumeration at 1 because 0 is padding index
         itoc = {i:c for i, c in enumerate(vocabulary, 1)}
         return ctoi, itoc, vocabulary_length
@@ -402,8 +396,7 @@ class NameNationalityData(Dataset):
         - A mapping from each country code in the provided list to the corresponding class index,
             as determined by the country_mapping dictionary.
 
-        Additionally, it calculates the total number of distinct target classes and prints this number
-        along with a list of the target classes.
+        Additionally, it calculates the total number of distinct target classes.
 
         Parameters
         ----------
@@ -426,7 +419,6 @@ class NameNationalityData(Dataset):
         """
         output_classes = set(country_mapping.values())
         number_of_classes = len(output_classes)
-        print(f'Number of target classes: {number_of_classes}:\n{", ".join(output_classes)}')
         class_to_index = {c:i for i, c in enumerate(output_classes, 1)} # start enumeration at 1 because 0 is padding index
         index_to_class = {i:c for c, i in class_to_index.items()}
         alpha2_to_index = {country: class_to_index[country_mapping[country]] for country in country_codes}
