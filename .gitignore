@@ -1,6 +1,9 @@
 **/*.csv
 .DS_Store
-/mlruns/**
+/mlruns/
+/lightning_logs/
+model_summary.txt
+checkpoint.pth
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
