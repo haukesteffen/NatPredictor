@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
@@ -102,4 +103,98 @@ class RNN_Nationality_Predictor(nn.Module):
             _, hidden = self.rnn(packed) # output ignored
         logits = F.relu(self.dense1(hidden[-1]))
         logits = self.dense2(self.dropout_layer(logits))
+        return logits
+
+
+class Transformer_Nationality_Predictor(nn.Module):
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        context_size: int,
+        d_model: int = 64,
+        nhead: int = 4,
+        num_layers: int = 2,
+        dim_feedforward: int = 128,
+        dropout: float = 0.3,
+    ):
+        """
+        Args:
+            vocab_size (int): Number of tokens in the vocabulary.
+            output_size (int): Number of output classes.
+            context_size (int): Maximum sequence length (without CLS token).
+            d_model (int): Embedding dimension.
+            nhead (int): Number of heads in multi-head attention.
+            num_layers (int): Number of TransformerDecoder layers.
+            dim_feedforward (int): Dimension of the feedforward network inside Transformer layers.
+            dropout (float): Dropout rate.
+        """
+        super().__init__()
+        self.input_size: int = input_size
+        self.output_size: int = output_size
+        self.context_size: int = context_size
+        self.d_model: int = d_model
+        self.nhead: int = nhead
+        self.num_layers: int = num_layers
+        self.dim_feedforward: int = dim_feedforward
+        self.dropout: float = dropout
+        
+        # Token embedding (0 is used as padding_idx)
+        self.token_embedding = nn.Embedding(self.input_size, self.d_model, padding_idx=0)
+        
+        # Positional embedding: We reserve position 0 for the classification token.
+        self.pos_embedding = nn.Embedding(self.context_size + 1, self.d_model)
+        
+        # Learned classification token (CLS)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.d_model))
+        
+        # Define a TransformerDecoderLayer and stack them
+        self.decoder_layer = nn.TransformerDecoderLayer(
+            d_model=self.d_model, nhead=self.nhead, dim_feedforward=self.dim_feedforward, dropout=self.dropout
+        )
+        self.transformer_decoder = nn.TransformerDecoder(self.decoder_layer, num_layers=self.num_layers)
+        
+        self.dropout_layer = nn.Dropout(self.dropout)
+        self.fc_out = nn.Linear(self.d_model, self.output_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (Tensor): Input tensor of shape (batch_size, context_size) with token indices.
+        
+        Returns:
+            Tensor: Output logits of shape (batch_size, output_size).
+        """
+        batch_size, seq_len = x.size()  # seq_len should be <= context_size
+        
+        # 1. Embed the input tokens.
+        token_emb = self.token_embedding(x)  # (batch_size, seq_len, d_model)
+        
+        # 2. Create positional indices for the tokens (starting at 1; reserve 0 for CLS).
+        pos_indices = torch.arange(1, seq_len + 1, device=x.device).unsqueeze(0).expand(batch_size, seq_len)
+        pos_emb = self.pos_embedding(pos_indices)  # (batch_size, seq_len, d_model)
+        
+        # Sum token and positional embeddings.
+        x_emb = self.dropout_layer(token_emb + pos_emb)  # (batch_size, seq_len, d_model)
+        
+        # 3. Prepend the classification token to the sequence.
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)  # (batch_size, 1, d_model)
+        # The target for the decoder is now [CLS, token1, token2, ..., token_seq_len].
+        tgt = torch.cat([cls_tokens, x_emb], dim=1)  # (batch_size, 1 + seq_len, d_model)
+        
+        # 4. Use the token embeddings (without CLS) as memory.
+        memory = x_emb  # (batch_size, seq_len, d_model)
+        
+        # The TransformerDecoder expects inputs of shape (seq_length, batch_size, d_model).
+        tgt = tgt.transpose(0, 1)      # (1 + seq_len, batch_size, d_model)
+        memory = memory.transpose(0, 1)  # (seq_len, batch_size, d_model)
+        
+        # 5. Pass through the TransformerDecoder.
+        # (You can add a tgt_mask or memory_mask here if needed.)
+        decoded = self.transformer_decoder(tgt, memory)  # (1 + seq_len, batch_size, d_model)
+        
+        # 6. Use the output corresponding to the CLS token (first token) for classification.
+        cls_decoded = decoded[0]  # (batch_size, d_model)
+        logits = self.fc_out(cls_decoded)  # (batch_size, output_size)
+        
         return logits
