@@ -1,6 +1,8 @@
-mlflow
-pandas
-pytorch
-pytorch-lightning
+torch
+lightning
 scikit-learn
+pandas
+mlflow
 torchinfo
+country_converter
+pyyaml

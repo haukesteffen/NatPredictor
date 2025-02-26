@@ -1,0 +1,20 @@
+parameters:
+  maximum_name_length: 40      # maximum number of characters
+  batch_size: 2048             # number of training examples per batch
+  n_eval: 100                  # evaluate loss every n batches
+  max_epochs: 10
+  early_stopping_patience: 20  # checks, not steps. so a patience of 20 corresponds to 20*n_eval steps
+  gradient_clipping_val: 1.0
+
+hyperparameters:
+  architecture: "LSTM"         # one of 'RNN', 'GRU' or 'LSTM'
+  embedding_dim: 64            # number of dimensions of embedded tensor
+  hidden_size: 256             # number of neurons in hidden layer of rnn
+  num_rnn_layers: 3            # number of stacked rnn layers
+  dropout: 0.1                 # dropout probability
+
+lr_scheduler_parameters:
+  warmup_steps: 1000           # number of steps for warmup
+  cosine_steps: 50000          # number of steps for cosine annealing
+  min_lr: 4e-5                 # minimum learning rate after cosine annealing ends
+  max_lr: 6e-3                 # maximum learning rate when warmup ends and cosine starts
