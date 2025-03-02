@@ -18,3 +18,11 @@ lr_scheduler_parameters:
   cosine_steps: 50000          # number of steps for cosine annealing
   min_lr: 4e-5                 # minimum learning rate after cosine annealing ends
   max_lr: 6e-3                 # maximum learning rate when warmup ends and cosine starts
+
+data_parameters:
+    target_class: "UNregion"   # See country_converter on PyPI for possible classes (e.g. UNregion)
+    vocab_path: "./data/.vocabulary"
+    country_codes_path: "./data/.country_codes"
+    train_path: "./data/train.csv"
+    val_path: "./data/val.csv"
+    test_path: "./data/test.csv"
