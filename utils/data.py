@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple, Optional
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, IterableDataset, DataLoader
+from torch.utils.data import Dataset, IterableDataset, DataLoader, get_worker_info
 import country_converter as coco
 
 @dataclass
@@ -304,13 +304,24 @@ class NameNationalityDataStream(BaseNationalityDataset, IterableDataset):
         self.chunksize = chunksize
 
     def __iter__(self):
-        for chunk in pd.read_csv(self.data_file, chunksize=self.chunksize):
-            chunk = chunk.sample(frac=1)
+        worker_info = get_worker_info()
+        # If in a worker process, partition workload among workers.
+        if worker_info is not None:
+            worker_id = worker_info.id
+            num_workers = worker_info.num_workers
+        else:
+            worker_id = 0
+            num_workers = 1
+        
+        # Read CSV in chunks
+        for chunk_idx, chunk in enumerate(pd.read_csv(self.data_file, chunksize=self.chunksize)):
+            chunk = chunk.iloc[worker_id::num_workers] # partition chunk rows
+            chunk = chunk.sample(frac=1)  # shuffle chunk rows
             for _, row in chunk.iterrows():
                 X, sequence_lengths = self._encode_name(row['name'])
                 y = self._encode_country(row['alpha2'])
                 yield X, y, sequence_lengths
-
+                
 def create_dataloaders(
     config: DataConfig,
     train_path: str,
