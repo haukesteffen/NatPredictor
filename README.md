@@ -1,6 +1,6 @@
 # Name Nationality Predictor
 
-A PyTorch-based RNN model for predicting a person’s nationality based solely on their name. This project processes a large dataset of names (from multiple CSV files), encodes names at the character level, and trains a multi-layer RNN. For downstream tasks, predicted country labels can be remapped (e.g., to UN Geoscheme regions) to reduce the number of output classes.
+A PyTorch-based RNN model for predicting a person’s nationality based solely on their name. This project processes a large dataset of names (from multiple CSV files), encodes names at the character level, and trains a multi-layer RNN. For downstream tasks, predicted country labels can be remapped (e.g., to UN Geoscheme regions) to reduce the number of output classes. Uses a [PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) Wrapper and [MLflow](https://mlflow.org/) for logging training experiments.
 
 ## Features
 
