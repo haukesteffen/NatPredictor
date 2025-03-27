@@ -6,9 +6,9 @@ A PyTorch-based RNN model for predicting a person’s nationality based solely o
 
 - **Data Preparation:**  
   - Original data from [here](https://github.com/philipperemy/name-dataset)
-  - The original CSV files (~500M rows) were concatenated, shuffled and split into training (99%) and validation (1%) data.
+  - The original CSV files (~500M rows) were concatenated, shuffled and split into training (98%), validation (1%) and test (1%) data.
   - Uses an `IterableDataset` to stream training data in manageable chunks from the large CSV file.
-  - Uses a `Dataset` to keep validation data in a single batch.
+  - Uses a `Dataset` to keep validation and test data in a single batch.
   - Constructs vocabularies from names (with character-to-index mapping) and encodes variable-length names with padding.
   - Constructs mappings for countries (alpha2-to-class, class-to-index and index-to-class) and encodes indices as one-hot-tensors.
   - Original labels (alpha2 country codes) can be mapped to broader regions (e.g., UN Geoscheme regions) to simplify downstream classification.
@@ -18,4 +18,4 @@ A PyTorch-based RNN model for predicting a person’s nationality based solely o
   - Uses `pack_padded_sequence` to efficiently process sequences of varying lengths.
   
 - **Inference Pipeline:**  
-  - Includes tools for encoding a single name and running inference.
+  - Tools for encoding a single name or batches of names and running inference are being worked on.
