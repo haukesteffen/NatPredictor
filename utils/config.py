@@ -108,14 +108,15 @@ def load_config(path: Union[str, Path], mlflow_logger: Optional[MLFlowLogger] = 
     Returns:
         Config: Parsed configuration object
     """
+    # Load YAML config file
     path = Path(path)
     with path.open('r') as file:
         data = yaml.safe_load(file)
     
-    # Convert all paths in the config
+    # Convert all paths in the config and create config object
     data = convert_paths(data)
-    
     config = Config(**data)
+    print(f"Config loaded from {path}.")
     
     if mlflow_logger:
         # Log config as artifact
@@ -123,5 +124,5 @@ def load_config(path: Union[str, Path], mlflow_logger: Optional[MLFlowLogger] = 
             local_path=str(path),
             run_id=mlflow_logger.run_id
         )
-    
+
     return config
