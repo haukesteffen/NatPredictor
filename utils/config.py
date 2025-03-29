@@ -1,7 +1,17 @@
+from pathlib import Path
 from pydantic import BaseModel
 import yaml
-from typing import Optional
+from typing import Optional, Union
 from lightning.pytorch.loggers import MLFlowLogger
+
+def convert_paths(data: dict) -> dict:
+    """Recursively convert all dictionary values containing 'path' to Path objects."""
+    for key, value in data.items():
+        if isinstance(value, dict):
+            data[key] = convert_paths(value)
+        elif isinstance(value, str) and 'path' in key.lower():
+            data[key] = Path(value)
+    return data
 
 class Parameters(BaseModel):
     """Training and evaluation parameters.
@@ -56,18 +66,23 @@ class DataParameters(BaseModel):
     
     Attributes:
         target_class (str): Target classification type (see country_converter on PyPI)
-        vocab_path (str): Path to vocabulary file
-        country_codes_path (str): Path to country codes file
-        train_path (str): Path to training data
-        val_path (str): Path to validation data
-        test_path (str): Path to test data
+        vocab_path (Path): Path to vocabulary file
+        country_codes_path (Path): Path to country codes file
+        mappings_path (Path): Path to mappings file
+        train_path (Path): Path to training data
+        val_path (Path): Path to validation data
+        test_path (Path): Path to test data
     """
     target_class: str
-    vocab_path: str
-    country_codes_path: str
-    train_path: str
-    val_path: str
-    test_path: str
+    vocab_path: Path
+    country_codes_path: Path
+    mappings_path: Path
+    train_path: Path
+    val_path: Path
+    test_path: Path
+
+    class Config:
+        arbitrary_types_allowed = True
 
 class Config(BaseModel):
     """Main configuration class combining all parameter groups.
@@ -76,32 +91,36 @@ class Config(BaseModel):
         parameters (Parameters): General training parameters
         hyperparameters (Hyperparameters): Model architecture parameters
         lr_scheduler_parameters (LrSchedulerParameters): Learning rate scheduler parameters
-        data_parameters (DataPaths): Data file paths and configurations
+        data_parameters (DataParameters): Data file paths and configurations
     """
     parameters: Parameters
     hyperparameters: Hyperparameters
     lr_scheduler_parameters: LrSchedulerParameters
     data_parameters: DataParameters
 
-def load_config(path: str, mlflow_logger: Optional[MLFlowLogger] = None) -> Config:
+def load_config(path: Union[str, Path], mlflow_logger: Optional[MLFlowLogger] = None) -> Config:
     """Load configuration from a YAML file and optionally log it to MLflow.
     
     Args:
-        path (str): Path to the YAML configuration file
+        path (Union[str, Path]): Path to the YAML configuration file
         mlflow_logger: Optional MLflow logger to log config as artifact
         
     Returns:
         Config: Parsed configuration object
     """
-    with open(path, "r") as file:
+    path = Path(path)
+    with path.open('r') as file:
         data = yaml.safe_load(file)
+    
+    # Convert all paths in the config
+    data = convert_paths(data)
     
     config = Config(**data)
     
     if mlflow_logger:
         # Log config as artifact
         mlflow_logger.experiment.log_artifact(
-            local_path=path,
+            local_path=str(path),
             run_id=mlflow_logger.run_id
         )
     
