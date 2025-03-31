@@ -4,15 +4,6 @@ import yaml
 from typing import Optional, Union
 from lightning.pytorch.loggers import MLFlowLogger
 
-def convert_paths(data: dict) -> dict:
-    """Recursively convert all dictionary values containing 'path' to Path objects."""
-    for key, value in data.items():
-        if isinstance(value, dict):
-            data[key] = convert_paths(value)
-        elif isinstance(value, str) and 'path' in key.lower():
-            data[key] = Path(value)
-    return data
-
 class Parameters(BaseModel):
     """Training and evaluation parameters.
     
@@ -61,22 +52,31 @@ class LrSchedulerParameters(BaseModel):
     min_lr: float
     max_lr: float
 
-class DataParameters(BaseModel):
-    """Data file paths and configurations.
+class MetadataParameters(BaseModel):
+    """Metadata file paths and configurations.
     
     Attributes:
         target_class (str): Target classification type (see country_converter on PyPI)
         vocab_path (Path): Path to vocabulary file
         country_codes_path (Path): Path to country codes file
         mappings_path (Path): Path to mappings file
-        train_path (Path): Path to training data
-        val_path (Path): Path to validation data
-        test_path (Path): Path to test data
     """
     target_class: str
     vocab_path: Path
     country_codes_path: Path
     mappings_path: Path
+
+    class Config:
+        arbitrary_types_allowed = True
+
+class DataParameters(BaseModel):
+    """Data file paths.
+    
+    Attributes:
+        train_path (Path): Path to training data
+        val_path (Path): Path to validation data
+        test_path (Path): Path to test data
+    """
     train_path: Path
     val_path: Path
     test_path: Path
@@ -91,12 +91,23 @@ class Config(BaseModel):
         parameters (Parameters): General training parameters
         hyperparameters (Hyperparameters): Model architecture parameters
         lr_scheduler_parameters (LrSchedulerParameters): Learning rate scheduler parameters
-        data_parameters (DataParameters): Data file paths and configurations
+        metadata_parameters (MetadataParameters): Metadata file paths and configurations
+        data_parameters (DataParameters): Data file paths
     """
     parameters: Parameters
     hyperparameters: Hyperparameters
     lr_scheduler_parameters: LrSchedulerParameters
+    metadata_parameters: MetadataParameters
     data_parameters: DataParameters
+
+def _convert_paths(data: dict) -> dict:
+    """Recursively convert all dictionary values containing 'path' to Path objects."""
+    for key, value in data.items():
+        if isinstance(value, dict):
+            data[key] = _convert_paths(value)
+        elif isinstance(value, str) and 'path' in key.lower():
+            data[key] = Path(value)
+    return data
 
 def load_config(path: Union[str, Path], mlflow_logger: Optional[MLFlowLogger] = None) -> Config:
     """Load configuration from a YAML file and optionally log it to MLflow.
@@ -114,7 +125,7 @@ def load_config(path: Union[str, Path], mlflow_logger: Optional[MLFlowLogger] = 
         data = yaml.safe_load(file)
     
     # Convert all paths in the config and create config object
-    data = convert_paths(data)
+    data = _convert_paths(data)
     config = Config(**data)
     print(f"Config loaded from {path}.")
     

@@ -1,9 +1,9 @@
 parameters:
   maximum_name_length: 40      # maximum number of characters
-  batch_size: 2048             # number of training examples per batch
+  batch_size: 65536            # number of training examples per batch
   n_eval: 100                  # evaluate loss every n batches
   max_epochs: 10
-  early_stopping_patience: 20  # checks, not steps. so a patience of 20 corresponds to 20*n_eval steps
+  early_stopping_patience: 5   # checks, not steps. so a patience of 20 corresponds to 20*n_eval steps
   gradient_clipping_val: 1.0
 
 hyperparameters:
@@ -19,10 +19,13 @@ lr_scheduler_parameters:
   min_lr: 4e-5                 # minimum learning rate after cosine annealing ends
   max_lr: 6e-3                 # maximum learning rate when warmup ends and cosine starts
 
-data_parameters:
+metadata_parameters:
     target_class: "UNregion"   # See country_converter on PyPI for possible classes (e.g. UNregion)
-    vocab_path: "./data/.vocabulary"
-    country_codes_path: "./data/.country_codes"
+    vocab_path: "./metadata/.vocabulary"
+    country_codes_path: "./metadata/.country_codes"
+    mappings_path: "./metadata/mappings.json"
+
+data_parameters:
     train_path: "./data/train.csv"
     val_path: "./data/val.csv"
     test_path: "./data/test.csv"

@@ -3,28 +3,37 @@ import torch.nn.functional as F
 import lightning as L
 from lightning.pytorch.loggers import MLFlowLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, EarlyStopping
-
-from utils.data import DataConfig, create_dataloaders
-from utils.model import RNN_Nationality_Predictor
 from utils.config import load_config
+from utils.metadata import initialize_metadata
+from utils.encoder import NationalityEncoder
+from utils.transforms import NationalityTransform
+from utils.data import create_dataloaders
+from utils.model import RNN_Nationality_Predictor
 from utils.lightning_model import LightningModelWrapper
 
 
 def main():
-    # Initialize MLflow logger
+    # initialize MLflow logger
     mlflow_logger = MLFlowLogger(experiment_name='Nationality Predictor', log_model=True)
     
-    # Load and log parameter config and data config
-    config = load_config("config.yaml", mlflow_logger)
-    data_config = DataConfig.from_files(
-        maximum_name_length=config.parameters.maximum_name_length,
-        vocab_path=config.data_parameters.vocab_path,
-        country_codes_path=config.data_parameters.country_codes_path,
-        target_class=config.data_parameters.target_class
+    # load and log config
+    config = load_config(
+        path="config.yaml",
+        mlflow_logger=mlflow_logger
+        )
+
+    # initialize metadata
+    vocabulary, country_codes, mappings = initialize_metadata(
+        config=config,
+        mlflow_logger=mlflow_logger
     )
-    print(f'Vocabulary size: {len(data_config.vocabulary)}')
-    print(f'Number of country codes: {len(data_config.country_codes)}')
-    print(f'Number of target classes: {len(set(data_config.country_mapping.values()))}')
+
+    # initialize encoder and transform
+    encoder = NationalityEncoder(
+        mappings=mappings,
+        maximum_name_length=config.parameters.maximum_name_length
+    )
+    transform = NationalityTransform(encoder=encoder)
     
     # handle device
     device: torch.device = torch.device(
@@ -35,9 +44,9 @@ def main():
     print(f"Using {device} device")
     torch.set_float32_matmul_precision('medium')
 
-    # Create dataloaders
+    # create dataloaders
     train_dataloader, val_dataloader, test_dataloader = create_dataloaders(
-        config=data_config,
+        transform=transform,
         train_path=config.data_parameters.train_path,
         val_path=config.data_parameters.val_path,
         test_path=config.data_parameters.test_path,
@@ -46,8 +55,8 @@ def main():
 
     # instantiate pytorch model
     model = RNN_Nationality_Predictor(
-        input_size=len(data_config.vocabulary)+1,
-        output_size=len(set(data_config.country_mapping.values()))+1,
+        input_size=len(vocabulary)+1, # +1 for padding
+        output_size=len(mappings['country']['class_to_index'])+1, # +1 for padding
         architecture=config.hyperparameters.architecture,
         embedding_dim=config.hyperparameters.embedding_dim,
         hidden_size=config.hyperparameters.hidden_size,
