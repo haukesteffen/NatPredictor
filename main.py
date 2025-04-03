@@ -14,7 +14,11 @@ from utils.lightning_model import LightningModelWrapper
 
 def main():
     # initialize MLflow logger
-    mlflow_logger = MLFlowLogger(experiment_name='Nationality Predictor', log_model=True)
+    mlflow_logger = MLFlowLogger(
+        experiment_name='Nationality Predictor',
+        tracking_uri='http://localhost:5001',
+        log_model=True
+    )
     
     # load and log config
     config = load_config(
@@ -74,6 +78,7 @@ def main():
         min_lr=config.lr_scheduler_parameters.min_lr,
         max_lr=config.lr_scheduler_parameters.max_lr
     )
+    lightning_model = torch.compile(lightning_model)
 
     # register callbacks
     lr_monitor = LearningRateMonitor(logging_interval='step')
@@ -89,7 +94,8 @@ def main():
         log_every_n_steps=config.parameters.n_eval,
         logger=mlflow_logger,
         callbacks=callbacks,
-        gradient_clip_val=config.parameters.gradient_clipping_val
+        gradient_clip_val=config.parameters.gradient_clipping_val,
+        precision="bf16-mixed"
     )
 
     # fit model
