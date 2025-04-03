@@ -2,7 +2,8 @@ import torch
 import torch.nn.functional as F
 import lightning as L
 from lightning.pytorch.loggers import MLFlowLogger
-from lightning.pytorch.callbacks import LearningRateMonitor, EarlyStopping
+from lightning.pytorch.callbacks import LearningRateMonitor, EarlyStopping, ModelCheckpoint
+
 from utils.config import load_config
 from utils.metadata import initialize_metadata
 from utils.encoder import NationalityEncoder
@@ -10,6 +11,7 @@ from utils.transforms import NationalityTransform
 from utils.data import create_dataloaders
 from utils.model import RNN_Nationality_Predictor
 from utils.lightning_model import LightningModelWrapper
+
 
 
 def main():
@@ -83,7 +85,8 @@ def main():
     # register callbacks
     lr_monitor = LearningRateMonitor(logging_interval='step')
     early_stopping = EarlyStopping('val_loss', patience=config.parameters.early_stopping_patience) # patience counts checks, not steps, so changing val_check_interval in Trainer instantiation changes this behaviour
-    callbacks = [lr_monitor, early_stopping]
+    checkpoint_callback = ModelCheckpoint(dirpath='checkpoints', filename='best-model', save_top_k=1, monitor='val_loss', mode='min', save_last=True)
+    callbacks = [lr_monitor, early_stopping, checkpoint_callback]
     mlflow_logger.log_hyperparams({'callbacks': ', '.join([callback.__class__.__name__ for callback in callbacks])})
 
     # instantiate trainer
