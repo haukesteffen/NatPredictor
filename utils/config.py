@@ -5,22 +5,22 @@ from typing import Optional, Union
 from lightning.pytorch.loggers import MLFlowLogger
 
 class Parameters(BaseModel):
-    """Training and evaluation parameters.
+    """General training parameters.
     
     Attributes:
-        maximum_name_length (int): Maximum number of characters allowed in sequence
-        batch_size (int): Number of samples per training batch
-        n_eval (int): Frequency of evaluation in batches
+        batch_size (int): Batch size for training
         max_epochs (int): Maximum number of training epochs
-        early_stopping_patience (int): Number of evaluations without improvement before stopping
-        gradient_clipping_val (float): Maximum allowed gradient norm for clipping
+        n_eval (int): Frequency of validation checks (in steps)
+        early_stopping_patience (int): Patience for early stopping (in checks)
+        gradient_clipping_val (float): Gradient clipping value
+        maximum_name_length (int): Maximum length of a name
     """
-    maximum_name_length: int
     batch_size: int
-    n_eval: int
     max_epochs: int
+    n_eval: int
     early_stopping_patience: int
     gradient_clipping_val: float
+    maximum_name_length: int
 
 class Hyperparameters(BaseModel):
     """Model architecture hyperparameters.
@@ -52,23 +52,6 @@ class LrSchedulerParameters(BaseModel):
     min_lr: float
     max_lr: float
 
-class MetadataParameters(BaseModel):
-    """Metadata file paths and configurations.
-    
-    Attributes:
-        target_class (str): Target classification type (see country_converter on PyPI)
-        vocab_path (Path): Path to vocabulary file
-        country_codes_path (Path): Path to country codes file
-        mappings_path (Path): Path to mappings file
-    """
-    target_class: str
-    vocab_path: Path
-    country_codes_path: Path
-    mappings_path: Path
-
-    class Config:
-        arbitrary_types_allowed = True
-
 class DataParameters(BaseModel):
     """Data file paths.
     
@@ -97,7 +80,6 @@ class Config(BaseModel):
     parameters: Parameters
     hyperparameters: Hyperparameters
     lr_scheduler_parameters: LrSchedulerParameters
-    metadata_parameters: MetadataParameters
     data_parameters: DataParameters
 
 def _convert_paths(data: dict) -> dict:
@@ -110,30 +92,17 @@ def _convert_paths(data: dict) -> dict:
     return data
 
 def load_config(path: Union[str, Path], mlflow_logger: Optional[MLFlowLogger] = None) -> Config:
-    """Load configuration from a YAML file and optionally log it to MLflow.
+    """Load configuration from YAML file."""
+    with open(path, 'r') as f:
+        config = yaml.safe_load(f)
     
-    Args:
-        path (Union[str, Path]): Path to the YAML configuration file
-        mlflow_logger: Optional MLflow logger to log config as artifact
-        
-    Returns:
-        Config: Parsed configuration object
-    """
-    # Load YAML config file
-    path = Path(path)
-    with path.open('r') as file:
-        data = yaml.safe_load(file)
+    # Convert all 'path' strings to Path objects
+    config = _convert_paths(config)
     
-    # Convert all paths in the config and create config object
-    data = _convert_paths(data)
-    config = Config(**data)
-    print(f"Config loaded from {path}.")
+    # Instantiate Config class
+    config = Config(**config)
     
     if mlflow_logger:
-        # Log config as artifact
-        mlflow_logger.experiment.log_artifact(
-            local_path=str(path),
-            run_id=mlflow_logger.run_id
-        )
-
+        mlflow_logger.log_hyperparams(config.model_dump())
+    print(f"Config loaded from {path}.")
     return config

@@ -2,6 +2,181 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
+from typing import List, Dict, Any, Tuple, Optional
+import pandas as pd
+import country_converter as coco
+from pathlib import Path
+import yaml
+
+class NationalityEncoder:
+    """Central class for all encoding/decoding operations."""
+    
+    def __init__(self, mappings: Dict[str, Any], maximum_name_length: int):
+        """Initialize encoder with mappings.
+        
+        Args:
+            mappings: Dictionary containing character and country mappings
+            maximum_name_length: Maximum length for name sequences
+        """
+        self.maximum_name_length = maximum_name_length
+        self.padding_index = 0
+        
+        # Set up character mappings
+        char_mappings = mappings['character']
+        self.char_to_index = char_mappings['char_to_index']
+        
+        # Set up country mappings
+        country_mappings = mappings['country']
+        self.class_to_index = country_mappings['class_to_index']
+        self.alpha2_to_class = country_mappings['alpha2_to_class']
+        self.alpha2_to_index = country_mappings['alpha2_to_index']
+        self.number_of_classes = len(self.class_to_index)
+        
+        # Create inverse mappings
+        self.index_to_char = {idx: char for char, idx in self.char_to_index.items()}
+        self.index_to_class = {idx: cls for cls, idx in self.class_to_index.items()}
+    
+    def encode_name(self, seq: str | List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Encode name(s) to index tensors."""
+        if isinstance(seq, str):
+            # Single name
+            encoded = [self.char_to_index.get(char, self.padding_index) for char in seq]
+            seq_len = len(encoded)
+            padded_tensor = torch.full(
+                (self.maximum_name_length,), 
+                self.padding_index, 
+                dtype=torch.int32
+            )
+            max_len = min(seq_len, self.maximum_name_length)
+            padded_tensor[:max_len] = torch.tensor(encoded[:max_len], dtype=torch.int32)
+            return padded_tensor, torch.tensor(max_len, dtype=torch.int32)
+        else:
+            # Batch of names
+            encoded_input = []
+            for s in seq:
+                encoded_input.append([
+                    self.char_to_index.get(char, self.padding_index) 
+                    for char in s
+                ])
+            
+            sequence_lengths = torch.tensor([
+                min(len(encoding), self.maximum_name_length) 
+                for encoding in encoded_input
+            ], dtype=torch.int32)
+            
+            batch_size = len(encoded_input)
+            padded_tensors = torch.full(
+                (batch_size, self.maximum_name_length),
+                self.padding_index,
+                dtype=torch.int32
+            )
+            
+            for i, encoding in enumerate(encoded_input):
+                seq_len = len(encoding)
+                max_len = min(seq_len, self.maximum_name_length)
+                padded_tensors[i, :max_len] = torch.tensor(
+                    encoding[:max_len], 
+                    dtype=torch.int32
+                )
+            
+            return padded_tensors, sequence_lengths
+    
+    def decode_name(self, seq_tensor: torch.Tensor) -> List[str]:
+        """Decode index tensor(s) to name(s)."""
+        if seq_tensor.dim() == 1:
+            return [''.join([
+                self.index_to_char.get(int(idx), '') 
+                for idx in seq_tensor
+            ])]
+        elif seq_tensor.dim() == 2:
+            return [''.join([
+                self.index_to_char.get(int(idx), '') 
+                for idx in row
+            ]) for row in seq_tensor]
+        else:
+            raise ValueError("seq_tensor must be 1D or 2D")
+    
+    def encode_country(self, country_input: str | List[str]) -> torch.Tensor:
+        """Encode country code(s) to one-hot tensors."""
+        if isinstance(country_input, str):
+            encoded_output = self.alpha2_to_index.get(country_input, self.padding_index)
+        else:
+            encoded_output = [
+                self.alpha2_to_index.get(c, self.padding_index) 
+                for c in country_input
+            ]
+            
+        index_tensors = torch.tensor(encoded_output, dtype=torch.int64)
+        return F.one_hot(
+            index_tensors, 
+            num_classes=self.number_of_classes+1
+        ).to(torch.float32)
+    
+    def decode_country(self, logits: torch.Tensor) -> List[str]:
+        """Convert model output logits to region labels."""
+        predictions = torch.argmax(logits, dim=1)
+        return [
+            self.index_to_class.get(p.item(), "Unknown") 
+            for p in predictions
+        ]
+
+    @classmethod
+    def create_from_data(cls, train_path: Path, target_class: str, maximum_name_length: int) -> 'NationalityEncoder':
+        """Create encoder from training data."""
+        vocabulary, country_codes = cls._create_vocabulary_and_codes(train_path)
+        mappings = cls._create_mappings(vocabulary, country_codes, target_class)
+        return cls(mappings, maximum_name_length)
+
+    @staticmethod
+    def _create_vocabulary_and_codes(train_path: Path) -> Tuple[List[str], List[str]]:
+        """Create vocabulary and country codes from training data."""
+        vocabulary = set()
+        country_codes = set()
+        chunksize = 100_000
+
+        # Process CSV in chunks to handle large files
+        for chunk in pd.read_csv(train_path, chunksize=chunksize):
+            # Add new characters from names
+            for name in chunk['name']:
+                vocabulary.update(str(name))
+
+            # Add new country codes
+            country_codes.update(chunk['alpha2'].unique())
+
+        # Sort vocabulary and country codes
+        sorted_vocab = sorted(vocabulary)
+        sorted_codes = sorted(country_codes)
+
+        return sorted_vocab, sorted_codes
+
+    @staticmethod
+    def _create_mappings(vocabulary: List[str], country_codes: List[str], target_class: str) -> Dict[str, Any]:
+        """Create mappings required for the model."""
+        # Create character mappings (with 0 reserved for padding)
+        char_to_index = {char: idx for idx, char in enumerate(sorted(vocabulary), 1)}
+
+        # Create country mappings (with 0 reserved for unknown)
+        alpha2_to_class = {cc: coco.convert(names=cc, to=target_class)
+                          for cc in country_codes}
+        output_classes = sorted(set(alpha2_to_class.values()))
+        class_to_index = {c: i for i, c in enumerate(output_classes, 1)}
+        alpha2_to_index = {
+            alpha2: class_to_index[alpha2_to_class[alpha2]]
+            for alpha2 in country_codes
+        }
+
+        # Save mappings
+        mappings = {
+            'character': {
+                'char_to_index': char_to_index,
+            },
+            'country': {
+                'class_to_index': class_to_index,
+                'alpha2_to_class': alpha2_to_class,
+                'alpha2_to_index': alpha2_to_index
+            }
+        }
+        return mappings
 
 class RNN_Nationality_Predictor(nn.Module):
     """
@@ -105,96 +280,148 @@ class RNN_Nationality_Predictor(nn.Module):
         logits = self.dense2(self.dropout_layer(logits))
         return logits
 
-
-class Transformer_Nationality_Predictor(nn.Module):
+class NationalityPredictor(nn.Module):
+    """Wrapper class that combines encoder and model for inference."""
+    
     def __init__(
         self,
-        input_size: int,
-        output_size: int,
-        context_size: int,
-        d_model: int = 64,
-        nhead: int = 4,
-        num_layers: int = 2,
-        dim_feedforward: int = 128,
-        dropout: float = 0.3,
+        model: RNN_Nationality_Predictor,
+        encoder: Optional['NationalityEncoder'] = None,
+        config: Optional[dict] = None,
+        device: torch.device = None
     ):
         """
         Args:
-            vocab_size (int): Number of tokens in the vocabulary.
-            output_size (int): Number of output classes.
-            context_size (int): Maximum sequence length (without CLS token).
-            d_model (int): Embedding dimension.
-            nhead (int): Number of heads in multi-head attention.
-            num_layers (int): Number of TransformerDecoder layers.
-            dim_feedforward (int): Dimension of the feedforward network inside Transformer layers.
-            dropout (float): Dropout rate.
+            model: Trained RNN model
+            encoder: Initialized NationalityEncoder (optional)
+            config: Configuration dictionary (required if encoder is None)
+            device: Device to run inference on
         """
         super().__init__()
-        self.input_size: int = input_size
-        self.output_size: int = output_size
-        self.context_size: int = context_size
-        self.d_model: int = d_model
-        self.nhead: int = nhead
-        self.num_layers: int = num_layers
-        self.dim_feedforward: int = dim_feedforward
-        self.dropout: float = dropout
-        
-        # Token embedding (0 is used as padding_idx)
-        self.token_embedding = nn.Embedding(self.input_size, self.d_model, padding_idx=0)
-        
-        # Positional embedding: We reserve position 0 for the classification token.
-        self.pos_embedding = nn.Embedding(self.context_size + 1, self.d_model)
-        
-        # Learned classification token (CLS)
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.d_model))
-        
-        # Define a TransformerDecoderLayer and stack them
-        self.decoder_layer = nn.TransformerDecoderLayer(
-            d_model=self.d_model, nhead=self.nhead, dim_feedforward=self.dim_feedforward, dropout=self.dropout
+        self.device = device or torch.device(
+            "cuda" if torch.cuda.is_available()
+            else "mps" if torch.backends.mps.is_available()
+            else "cpu"
         )
-        self.transformer_decoder = nn.TransformerDecoder(self.decoder_layer, num_layers=self.num_layers)
+        self.model = model.to(self.device)
+        self.model.eval()
+        if encoder is not None:
+            self.encoder = encoder
+        else:
+            if config is None:
+                raise ValueError("If encoder is not provided, config must be given.")
+            train_path = config["data_parameters"]["train_path"]
+            target_class = config["metadata_parameters"]["target_class"]
+            maximum_name_length = config["parameters"]["maximum_name_length"]
+            self.encoder = NationalityEncoder.create_from_data(
+                train_path=train_path,
+                target_class=target_class,
+                maximum_name_length=maximum_name_length
+            )
+    
+    def forward(self, names: List[str]) -> List[str]:
+        """Forward pass for inference.
         
-        self.dropout_layer = nn.Dropout(self.dropout)
-        self.fc_out = nn.Linear(self.d_model, self.output_size)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
         Args:
-            x (Tensor): Input tensor of shape (batch_size, context_size) with token indices.
-        
+            names: List of names to predict nationalities for
+            
         Returns:
-            Tensor: Output logits of shape (batch_size, output_size).
+            List of predicted region labels
         """
-        batch_size, seq_len = x.size()  # seq_len should be <= context_size
+        # Encode names
+        name_tensor, lengths = self.encoder.encode_name(names)
         
-        # 1. Embed the input tokens.
-        token_emb = self.token_embedding(x)  # (batch_size, seq_len, d_model)
+        # Move to device
+        name_tensor = name_tensor.to(self.device)
+        lengths = lengths.to(self.device)
         
-        # 2. Create positional indices for the tokens (starting at 1; reserve 0 for CLS).
-        pos_indices = torch.arange(1, seq_len + 1, device=x.device).unsqueeze(0).expand(batch_size, seq_len)
-        pos_emb = self.pos_embedding(pos_indices)  # (batch_size, seq_len, d_model)
+        # Get predictions
+        logits = self.model(name_tensor, lengths)
+        return self.encoder.decode_country(logits)
+    
+    def predict_proba(self, names: List[str]) -> torch.Tensor:
+        """Get probability distribution over classes.
         
-        # Sum token and positional embeddings.
-        x_emb = self.dropout_layer(token_emb + pos_emb)  # (batch_size, seq_len, d_model)
+        Args:
+            names: List of names to predict probabilities for
+            
+        Returns:
+            Tensor of shape (batch_size, num_classes) with probabilities
+        """
+        # Encode names
+        name_tensor, lengths = self.encoder.encode_name(names)
         
-        # 3. Prepend the classification token to the sequence.
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)  # (batch_size, 1, d_model)
-        # The target for the decoder is now [CLS, token1, token2, ..., token_seq_len].
-        tgt = torch.cat([cls_tokens, x_emb], dim=1)  # (batch_size, 1 + seq_len, d_model)
+        # Move to device
+        name_tensor = name_tensor.to(self.device)
+        lengths = lengths.to(self.device)
         
-        # 4. Use the token embeddings (without CLS) as memory.
-        memory = x_emb  # (batch_size, seq_len, d_model)
+        # Get predictions
+        with torch.no_grad():
+            logits = self.model(name_tensor, lengths)
+            return F.softmax(logits, dim=1)
+    
+    def state_dict(self) -> Dict[str, Any]:
+        """Save both model weights and metadata."""
+        state_dict = {
+            'model': self.model.state_dict(),
+            'metadata': {
+                'mappings': {
+                    'character': {
+                        'char_to_index': self.encoder.char_to_index,
+                    },
+                    'country': {
+                        'class_to_index': self.encoder.class_to_index,
+                        'alpha2_to_class': self.encoder.alpha2_to_class,
+                        'alpha2_to_index': self.encoder.alpha2_to_index
+                    }
+                },
+                'maximum_name_length': self.encoder.maximum_name_length,
+                'model_config': {
+                    'architecture': self.model.architecture,
+                    'embedding_dim': self.model.embedding_dim,
+                    'hidden_size': self.model.hidden_size,
+                    'num_rnn_layers': self.model.num_rnn_layers,
+                    'dropout': self.model.dropout
+                }
+            }
+        }
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Load both model weights and metadata."""
+        # Load model weights
+        self.model.load_state_dict(state_dict['model'])
         
-        # The TransformerDecoder expects inputs of shape (seq_length, batch_size, d_model).
-        tgt = tgt.transpose(0, 1)      # (1 + seq_len, batch_size, d_model)
-        memory = memory.transpose(0, 1)  # (seq_len, batch_size, d_model)
+        # Load metadata into encoder
+        metadata = state_dict['metadata']
+        self.encoder = NationalityEncoder(
+            mappings=metadata['mappings'],
+            maximum_name_length=metadata['maximum_name_length']
+        )
+
+    @classmethod
+    def from_pretrained(cls, checkpoint_path: str, device: torch.device = None) -> 'NationalityPredictor':
+        """Create predictor from pretrained checkpoint containing both weights and metadata."""
+        # Load full state dict
+        state_dict = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+        metadata = state_dict['metadata']
         
-        # 5. Pass through the TransformerDecoder.
-        # (You can add a tgt_mask or memory_mask here if needed.)
-        decoded = self.transformer_decoder(tgt, memory)  # (1 + seq_len, batch_size, d_model)
+        # Create encoder
+        encoder = NationalityEncoder(
+            mappings=metadata['mappings'],
+            maximum_name_length=metadata['maximum_name_length']
+        )
         
-        # 6. Use the output corresponding to the CLS token (first token) for classification.
-        cls_decoded = decoded[0]  # (batch_size, d_model)
-        logits = self.fc_out(cls_decoded)  # (batch_size, output_size)
+        # Create model with config from metadata
+        config = metadata['model_config']
+        model = RNN_Nationality_Predictor(
+            input_size=len(metadata['mappings']['character']['char_to_index'])+1,
+            output_size=len(metadata['mappings']['country']['class_to_index'])+1,
+            **config
+        )
         
-        return logits
+        # Create predictor and load state
+        predictor = cls(model=model, encoder=encoder, device=device)
+        predictor.load_state_dict(state_dict)
+        
+        return predictor

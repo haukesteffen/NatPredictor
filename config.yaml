@@ -21,9 +21,6 @@ lr_scheduler_parameters:
 
 metadata_parameters:
     target_class: "UNregion"   # See country_converter on PyPI for possible classes (e.g. UNregion)
-    vocab_path: "./metadata/.vocabulary"
-    country_codes_path: "./metadata/.country_codes"
-    mappings_path: "./metadata/mappings.json"
 
 data_parameters:
     train_path: "./data/train.csv"
