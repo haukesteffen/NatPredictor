@@ -1,0 +1,6 @@
+# inference_requirements.txt
+torch==2.2.1 --index-url https://download.pytorch.org/whl/cpu   # CPU wheel
+fastapi==0.111.*
+uvicorn[standard]==0.29.*
+pyyaml
+country_converter

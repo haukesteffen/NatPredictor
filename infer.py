@@ -70,7 +70,7 @@ def predict(name: str = Query(..., description="Name to predict nationality for"
     Returns a list of dicts: [{"nationality": ..., "probability": ...}, ...]
     """
     probs = predictor.predict_proba([name])[0].cpu()
-    prob_list = list(probs.numpy())
+    prob_list = probs.tolist()
     # Pair nationalities and probabilities, sort, and take top 5
     top5 = sorted(zip(list(predictor.encoder.index_to_class.values()), prob_list[1:]), key=lambda x: x[1], reverse=True)[:5]
     return [{"nationality": nat, "probability": float(f"{prob:.5f}")} for nat, prob in top5]
